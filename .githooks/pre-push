@@ -1,0 +1,4 @@
+#!/bin/sh
+# Sends a Telegram notification for the latest commit. Never blocks the push.
+python3 "$(git rev-parse --show-toplevel)/scripts/notify_push.py"
+exit 0
