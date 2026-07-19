@@ -1,0 +1,57 @@
+name: Telegram Push Notification
+
+on:
+  push:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: github.event.head_commit != null
+    steps:
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_URL: ${{ github.event.head_commit.url }}
+          COMMIT_TIMESTAMP: ${{ github.event.head_commit.timestamp }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name }}
+          REPO_NAME: ${{ github.repository }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          SUBJECT=$(printf '%s' "$COMMIT_MESSAGE" | head -n1)
+          BODY=$(printf '%s' "$COMMIT_MESSAGE" | tail -n +2 | sed '/^[[:space:]]*$/d')
+
+          escape_html() {
+            printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+          }
+          SUBJECT_ESCAPED=$(escape_html "$SUBJECT")
+          BODY_ESCAPED=$(escape_html "$BODY")
+
+          DATE_STR=$(date -u -d "$COMMIT_TIMESTAMP" '+%b %-d, %Y %H:%M UTC')
+
+          if [ -n "$BODY_ESCAPED" ]; then
+            TEXT=$(printf '📅 %s\n🚀 <b>%s</b>\n\n%s\n\n📂 %s @ %s\n👤 pushed by %s\n\n🔗 %s' \
+              "$DATE_STR" "$SUBJECT_ESCAPED" "$BODY_ESCAPED" "$REPO_NAME" "$BRANCH_NAME" "$COMMIT_AUTHOR" "$COMMIT_URL")
+          else
+            TEXT=$(printf '📅 %s\n🚀 <b>%s</b>\n\n📂 %s @ %s\n👤 pushed by %s\n\n🔗 %s' \
+              "$DATE_STR" "$SUBJECT_ESCAPED" "$REPO_NAME" "$BRANCH_NAME" "$COMMIT_AUTHOR" "$COMMIT_URL")
+          fi
+
+          PAYLOAD=$(jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$TEXT" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}')
+
+          HTTP_STATUS=$(curl -sS -o /tmp/telegram_response.json -w '%{http_code}' \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H 'Content-Type: application/json' \
+            -d "$PAYLOAD")
+
+          echo "Telegram API response (HTTP $HTTP_STATUS):"
+          cat /tmp/telegram_response.json
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Telegram API call failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi
