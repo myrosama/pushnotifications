@@ -44,13 +44,13 @@ def repo_url_and_name():
 
 def latest_commit():
     result = subprocess.run(
-        ["git", "log", "-1", "--pretty=format:%H|%h|%ad|%s", "--date=format:%B %d, %Y"],
+        ["git", "log", "-1", "--pretty=format:%H%x1f%h%x1f%ad%x1f%s%x1f%b", "--date=format:%B %d, %Y"],
         capture_output=True, text=True, cwd=REPO_ROOT
     )
     if result.returncode != 0 or not result.stdout.strip():
         return None
-    full_hash, short_hash, date, subject = result.stdout.strip().split("|", 3)
-    return full_hash, short_hash, date, subject
+    full_hash, short_hash, date, subject, body = result.stdout.split("\x1f", 4)
+    return full_hash, short_hash, date, subject, body.strip()
 
 
 def escape_html(text):
@@ -71,12 +71,16 @@ def main():
     if not commit:
         print("Telegram push notifier: no commits found, skipping.")
         return
-    full_hash, short_hash, date, subject = commit
+    full_hash, short_hash, date, subject, body = commit
+
+    quote = f"- {escape_html(subject)}"
+    if body:
+        quote += f"\n\n{escape_html(body)}"
 
     text = (
         f"<b>{escape_html(repo_name)} Updates</b>\n"
         f"<b>Date:</b> {date}\n\n"
-        f"<blockquote>- {escape_html(subject)}</blockquote>\n\n"
+        f"<blockquote expandable>{quote}</blockquote>\n\n"
         f'🔗 Commit: <a href="{repo_url}/commit/{full_hash}">{short_hash}</a>'
     )
 
